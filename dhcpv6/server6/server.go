@@ -85,7 +85,7 @@ func (s *Server) Serve() error {
 			log.Printf("Error reading from packet conn: %v", err)
 			return err
 		}
-		log.Printf("Handling request from %v", peer)
+//		log.Printf("Handling request from %v", peer)
 
 		d, err := dhcpv6.FromBytes(rbuf[:n])
 		if err != nil {
