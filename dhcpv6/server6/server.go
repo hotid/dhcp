@@ -1,61 +1,61 @@
+// Package server6 is a basic, extensible DHCPv6 server.
+//
+// To use the DHCPv6 server code you have to call NewServer with three arguments:
+// - an interface to listen on,
+// - an address to listen on, and
+// - a handler function, that will be called every time a valid DHCPv6 packet is
+//   received.
+//
+// The address to listen on is used to know IP address, port and optionally the
+// scope to create and UDP socket to listen on for DHCPv6 traffic.
+//
+// The handler is a function that takes as input a packet connection, that can be
+// used to reply to the client; a peer address, that identifies the client sending
+// the request, and the DHCPv6 packet itself. Just implement your custom logic in
+// the handler.
+//
+// Optionally, NewServer can receive options that will modify the server object.
+// Some options already exist, for example WithConn. If this option is passed with
+// a valid connection, the listening address argument is ignored.
+//
+// Example program:
+//
+//	package main
+//
+//	import (
+//		"log"
+//		"net"
+//
+//		"github.com/insomniacslk/dhcp/dhcpv6"
+//		"github.com/insomniacslk/dhcp/dhcpv6/server6"
+//	)
+//
+//	func handler(conn net.PacketConn, peer net.Addr, m dhcpv6.DHCPv6) {
+//		// this function will just print the received DHCPv6 message, without replying
+//		log.Print(m.Summary())
+//	}
+//
+//	func main() {
+//		laddr := net.UDPAddr{
+//			IP:   net.ParseIP("::1"),
+//			Port: 547,
+//		}
+//		server, err := server6.NewServer("eth0", &laddr, handler)
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//
+//		// This never returns. If you want to do other stuff, dump it into a
+//		// goroutine.
+//		server.Serve()
+//	}
+//
 package server6
 
-/*
-  To use the DHCPv6 server code you have to call NewServer with two arguments:
-  - an address to listen on, and
-  - a handler function, that will be called every time a valid DHCPv6 packet is
-    received.
-
-  The address to listen on is used to know IP address, port and optionally the
-  scope to create and UDP socket to listen on for DHCPv6 traffic.
-
-  The handler is a function that takes as input a packet connection, that can be
-  used to reply to the client; a peer address, that identifies the client sending
-  the request, and the DHCPv6 packet itself. Just implement your custom logic in
-  the handler.
-
-  Optionally, NewServer can receive options that will modify the server object.
-  Some options already exist, for example WithConn. If this option is passed with
-  a valid connection, the listening address argument is ignored.
-
-  Example program:
-
-
-package main
-
 import (
 	"log"
 	"net"
-
-	"github.com/insomniacslk/dhcp/dhcpv6"
-	"github.com/insomniacslk/dhcp/dhcpv6/server6"
-)
-
-func handler(conn net.PacketConn, peer net.Addr, m dhcpv6.DHCPv6) {
-	// this function will just print the received DHCPv6 message, without replying
-	log.Print(m.Summary())
-}
-
-func main() {
-	laddr := net.UDPAddr{
-		IP:   net.ParseIP("::1"),
-		Port: 547,
-	}
-	server, err := server6.NewServer(&laddr, handler)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// This never returns. If you want to do other stuff, dump it into a
-	// goroutine.
-	server.Serve()
-}
-
-*/
-
-import (
-	"log"
-	"net"
+	"os"
 
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"golang.org/x/net/ipv6"
@@ -69,27 +69,28 @@ type Handler func(conn net.PacketConn, peer net.Addr, m dhcpv6.DHCPv6)
 type Server struct {
 	conn    net.PacketConn
 	handler Handler
+	logger  Logger
 }
 
 // Serve starts the DHCPv6 server. The listener will run in background, and can
 // be interrupted with `Server.Close`.
 func (s *Server) Serve() error {
-	log.Printf("Server listening on %s", s.conn.LocalAddr())
-	log.Print("Ready to handle requests")
+	s.logger.Printf("Server listening on %s", s.conn.LocalAddr())
+	s.logger.Printf("Ready to handle requests")
 
 	defer s.Close()
 	for {
 		rbuf := make([]byte, 4096) // FIXME this is bad
 		n, peer, err := s.conn.ReadFrom(rbuf)
 		if err != nil {
-			log.Printf("Error reading from packet conn: %v", err)
+			s.logger.Printf("Error reading from packet conn: %v", err)
 			return err
 		}
-//		log.Printf("Handling request from %v", peer)
+//		s.logger.Printf("Handling request from %v", peer)
 
 		d, err := dhcpv6.FromBytes(rbuf[:n])
 		if err != nil {
-			log.Printf("Error parsing DHCPv6 request: %v", err)
+			s.logger.Printf("Error parsing DHCPv6 request: %v", err)
 			continue
 		}
 
@@ -125,6 +126,7 @@ func WithConn(conn net.PacketConn) ServerOpt {
 func NewServer(ifname string, addr *net.UDPAddr, handler Handler, opt ...ServerOpt) (*Server, error) {
 	s := &Server{
 		handler: handler,
+		logger:  EmptyLogger{},
 	}
 
 	for _, o := range opt {
@@ -180,4 +182,29 @@ func NewServer(ifname string, addr *net.UDPAddr, handler Handler, opt ...ServerO
 	}
 
 	return s, nil
+}
+
+// WithSummaryLogger logs one-line DHCPv6 message summaries when sent & received.
+func WithSummaryLogger() ServerOpt {
+	return func(s *Server) {
+		s.logger = ShortSummaryLogger{
+			Printfer: log.New(os.Stderr, "[dhcpv6] ", log.LstdFlags),
+		}
+	}
+}
+
+// WithDebugLogger logs multi-line full DHCPv6 messages when sent & received.
+func WithDebugLogger() ServerOpt {
+	return func(s *Server) {
+		s.logger = DebugLogger{
+			Printfer: log.New(os.Stderr, "[dhcpv6] ", log.LstdFlags),
+		}
+	}
+}
+
+// WithLogger set the logger (see interface Logger).
+func WithLogger(newLogger Logger) ServerOpt {
+	return func(s *Server) {
+		s.logger = newLogger
+	}
 }

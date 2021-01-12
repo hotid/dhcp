@@ -31,9 +31,20 @@ func TestRelayMessage(t *testing.T) {
 	if pa := r.PeerAddr; !pa.Equal(ma) {
 		t.Fatalf("Invalid peer address. Expected %v, got %v", ma, pa)
 	}
-	if opts := r.Options; len(opts) != 0 {
+	if opts := r.Options.Options; len(opts) != 0 {
 		t.Fatalf("Invalid options. Expected none, got %v", opts)
 	}
+}
+
+func TestRelayMessageToBytesDefault(t *testing.T) {
+	want := []byte{
+		12,                                             // MessageTypeRelayForward
+		0,                                              // hop count
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // link addr
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // peer addr
+	}
+	r := RelayMessage{MessageType: MessageTypeRelayForward}
+	require.Equal(t, r.ToBytes(), want)
 }
 
 func TestRelayMessageToBytes(t *testing.T) {
@@ -59,18 +70,14 @@ func TestRelayMessageToBytes(t *testing.T) {
 		LinkAddr:    net.IPv6interfacelocalallnodes,
 		PeerAddr:    net.IPv6linklocalallrouters,
 	}
-	opt := OptRelayMsg{
-		relayMessage: &Message{
-			MessageType:   MessageTypeSolicit,
-			TransactionID: TransactionID{0xaa, 0xbb, 0xcc},
-			Options: []Option{
-				&OptElapsedTime{
-					ElapsedTime: 0,
-				},
-			},
-		},
-	}
-	r.AddOption(&opt)
+	opt := OptRelayMessage(&Message{
+		MessageType:   MessageTypeSolicit,
+		TransactionID: TransactionID{0xaa, 0xbb, 0xcc},
+		Options: MessageOptions{[]Option{
+			OptElapsedTime(0),
+		}},
+	})
+	r.AddOption(opt)
 	relayBytes := r.ToBytes()
 	if !bytes.Equal(expected, relayBytes) {
 		t.Fatalf("Invalid ToBytes result. Expected %v, got %v", expected, relayBytes)
@@ -83,16 +90,14 @@ func TestNewRelayRepFromRelayForw(t *testing.T) {
 	rf.MessageType = MessageTypeRelayForward
 	rf.PeerAddr = net.IPv6linklocalallrouters
 	rf.LinkAddr = net.IPv6interfacelocalallnodes
-	rf.AddOption(&OptInterfaceId{})
-	rf.AddOption(&OptRemoteId{})
+	rf.AddOption(OptInterfaceID(nil))
+	rf.AddOption(&OptRemoteID{})
 
 	// create the inner message
 	s, err := NewMessage()
 	require.NoError(t, err)
-	s.AddOption(&OptClientId{})
-	orm := OptRelayMsg{}
-	orm.SetRelayMessage(s)
-	rf.AddOption(&orm)
+	s.AddOption(OptClientID(Duid{}))
+	rf.AddOption(OptRelayMessage(s))
 
 	a, err := NewAdvertiseFromSolicit(s)
 	require.NoError(t, err)

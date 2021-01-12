@@ -35,46 +35,42 @@ type NetConf struct {
 // GetNetConfFromPacketv6 extracts network configuration information from a DHCPv6
 // Reply packet and returns a populated NetConf structure
 func GetNetConfFromPacketv6(d *dhcpv6.Message) (*NetConf, error) {
-	opt := d.GetOneOption(dhcpv6.OptionIANA)
-	if opt == nil {
-		return nil, errors.New("No option IA NA found")
+	iana := d.Options.OneIANA()
+	if iana == nil {
+		return nil, errors.New("no option IA NA found")
 	}
 	netconf := NetConf{}
-	// get IP configuration
-	oiana := opt.(*dhcpv6.OptIANA)
-	iaaddrs := make([]*dhcpv6.OptIAAddress, 0)
-	for _, o := range oiana.Options {
-		if o.Code() == dhcpv6.OptionIAAddr {
-			iaaddrs = append(iaaddrs, o.(*dhcpv6.OptIAAddress))
-		}
-	}
-	netmask := net.IPMask(net.ParseIP("ffff:ffff:ffff:ffff::"))
-	for _, iaaddr := range iaaddrs {
+
+	for _, iaaddr := range iana.Options.Addresses() {
 		netconf.Addresses = append(netconf.Addresses, AddrConf{
 			IPNet: net.IPNet{
-				IP:   iaaddr.IPv6Addr,
-				Mask: netmask,
+				IP: iaaddr.IPv6Addr,
+
+				// This mask tells Linux which addresses we know to be
+				// "on-link" (i.e., reachable on this interface without
+				// having to talk to a router).
+				//
+				// Since DHCPv6 does not give us that information, we
+				// have to assume that no addresses are on-link. To do
+				// that, we use /128. (See also RFC 5942 Section 5,
+				// "Observed Incorrect Implementation Behavior".)
+				Mask: net.CIDRMask(128, 128),
 			},
 			PreferredLifetime: iaaddr.PreferredLifetime,
 			ValidLifetime:     iaaddr.ValidLifetime,
 		})
 	}
 	// get DNS configuration
-	opt = d.GetOneOption(dhcpv6.OptionDNSRecursiveNameServer)
-	if opt == nil {
-		return nil, errors.New("No option DNS Recursive Name Servers found ")
+	dns := d.Options.DNS()
+	if len(dns) == 0 {
+		return nil, errors.New("no option DNS Recursive Name Servers found")
 	}
-	odnsserv := opt.(*dhcpv6.OptDNSRecursiveNameServer)
-	// TODO should this be copied?
-	netconf.DNSServers = odnsserv.NameServers
+	netconf.DNSServers = dns
 
-	opt = d.GetOneOption(dhcpv6.OptionDomainSearchList)
-	if opt != nil {
-		odomains := opt.(*dhcpv6.OptDomainSearchList)
-		// TODO should this be copied?
-		netconf.DNSSearchList = odomains.DomainSearchList.Labels
+	domains := d.Options.DomainSearchList()
+	if domains != nil {
+		netconf.DNSSearchList = domains.Labels
 	}
-
 	return &netconf, nil
 }
 
@@ -246,7 +242,7 @@ func ConfigureInterface(ifname string, netconf *NetConf) (err error) {
 
 		src := netconf.Addresses[0].IPNet
 		// TODO handle the remaining Routers if more than one
-		if err := rt.RouteAddSrc(iface, dst, &src, netconf.Routers[0]); err != nil {
+		if err := rt.RouteAdd(iface, dst, netconf.Routers[0], rtnl.WithRouteSrc(&src)); err != nil {
 			return fmt.Errorf("could not add gateway %s for src %s dst %s to interface %s: %v", netconf.Routers[0], src, dst, ifname, err)
 		}
 	}

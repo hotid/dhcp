@@ -25,38 +25,47 @@ type CircuitID struct {
 }
 
 // ParseRemoteId will parse the RemoteId Option data for Vendor Specific data
-func ParseRemoteId(packet dhcpv6.DHCPv6) (*CircuitID, error) {
+func ParseRemoteID(packet dhcpv6.DHCPv6) (*CircuitID, error) {
 	// Need to decapsulate the packet after multiple relays in order to reach RemoteId data
 	inner, err := dhcpv6.DecapsulateRelayIndex(packet, -1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decapsulate relay index: %v", err)
 	}
 
-	if rid := inner.GetOneOption(dhcpv6.OptionRemoteID); rid != nil {
-		remoteID := string(rid.(*dhcpv6.OptRemoteId).RemoteID())
-		circ, err := matchCircuitId(remoteID)
-		if err != nil {
-			return nil, err
+	if rm, ok := inner.(*dhcpv6.RelayMessage); ok {
+		if rid := rm.Options.RemoteID(); rid != nil {
+			remoteID := string(rid.RemoteID)
+			circ, err := matchCircuitId(remoteID)
+			if err == nil {
+				return circ, nil
+			}
 		}
-		return circ, nil
+		// if we fail to find circuit id from remote id try to use interface ID option
+		if iid := rm.Options.InterfaceID(); iid != nil {
+			interfaceID := string(iid)
+			circ, err := matchCircuitId(interfaceID)
+			if err == nil {
+				return circ, nil
+			}
+		}
 	}
-	return nil, errors.New("failed to parse RemoteID option data")
+	return nil, errors.New("failed to parse RemoteID and InterfaceID option data")
 }
 
-func matchCircuitId(remoteID string) (*CircuitID, error) {
+func matchCircuitId(circuitInfo string) (*CircuitID, error) {
 	var names, matches []string
 
 	switch {
-	case aristaPVPattern.MatchString(remoteID):
-		matches = aristaPVPattern.FindStringSubmatch(remoteID)
+	case aristaPVPattern.MatchString(circuitInfo):
+		matches = aristaPVPattern.FindStringSubmatch(circuitInfo)
 		names = aristaPVPattern.SubexpNames()
-	case aristaSMPPattern.MatchString(remoteID):
-		matches = aristaSMPPattern.FindStringSubmatch(remoteID)
+	case aristaSMPPattern.MatchString(circuitInfo):
+		matches = aristaSMPPattern.FindStringSubmatch(circuitInfo)
 		names = aristaSMPPattern.SubexpNames()
 	}
 
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no circuitId regex matches for %v", remoteID)
+		return nil, fmt.Errorf("no circuitId regex matches for %v", circuitInfo)
 	}
 
 	var circuit CircuitID

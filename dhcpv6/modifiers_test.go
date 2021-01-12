@@ -17,10 +17,8 @@ func TestWithClientID(t *testing.T) {
 	}
 	m, err := NewMessage(WithClientID(duid))
 	require.NoError(t, err)
-	opt := m.GetOneOption(OptionClientID)
-	require.NotNil(t, opt)
-	cid := opt.(*OptClientId)
-	require.Equal(t, cid.Cid, duid)
+	cid := m.Options.ClientID()
+	require.Equal(t, cid, &duid)
 }
 
 func TestWithServerID(t *testing.T) {
@@ -31,26 +29,20 @@ func TestWithServerID(t *testing.T) {
 	}
 	m, err := NewMessage(WithServerID(duid))
 	require.NoError(t, err)
-	opt := m.GetOneOption(OptionServerID)
-	require.NotNil(t, opt)
-	sid := opt.(*OptServerId)
-	require.Equal(t, sid.Sid, duid)
+	sid := m.Options.ServerID()
+	require.Equal(t, sid, &duid)
 }
 
 func TestWithRequestedOptions(t *testing.T) {
 	// Check if ORO is created when no ORO present
 	m, err := NewMessage(WithRequestedOptions(OptionClientID))
 	require.NoError(t, err)
-	opt := m.GetOneOption(OptionORO)
-	require.NotNil(t, opt)
-	oro := opt.(*OptRequestedOption)
-	require.ElementsMatch(t, oro.RequestedOptions(), []OptionCode{OptionClientID})
+	oro := m.Options.RequestedOptions()
+	require.ElementsMatch(t, oro, OptionCodes{OptionClientID})
 	// Check if already set options are preserved
 	WithRequestedOptions(OptionServerID)(m)
-	opt = m.GetOneOption(OptionORO)
-	require.NotNil(t, opt)
-	oro = opt.(*OptRequestedOption)
-	require.ElementsMatch(t, oro.RequestedOptions(), []OptionCode{OptionClientID, OptionServerID})
+	oro = m.Options.RequestedOptions()
+	require.ElementsMatch(t, oro, OptionCodes{OptionClientID, OptionServerID})
 }
 
 func TestWithIANA(t *testing.T) {
@@ -60,37 +52,32 @@ func TestWithIANA(t *testing.T) {
 		PreferredLifetime: 3600,
 		ValidLifetime:     5200,
 	})(&d)
-	require.Equal(t, 1, len(d.Options))
-	require.Equal(t, OptionIANA, d.Options[0].Code())
+	require.Equal(t, 1, len(d.Options.Options))
+	require.Equal(t, OptionIANA, d.Options.Options[0].Code())
 }
 
 func TestWithDNS(t *testing.T) {
 	var d Message
-	WithDNS([]net.IP{
+	WithDNS(
 		net.ParseIP("fe80::1"),
 		net.ParseIP("fe80::2"),
-	}...)(&d)
-	require.Equal(t, 1, len(d.Options))
-	dns := d.Options[0].(*OptDNSRecursiveNameServer)
+	)(&d)
+	require.Equal(t, 1, len(d.Options.Options))
+	dns := d.Options.DNS()
 	log.Printf("DNS %+v", dns)
-	require.Equal(t, OptionDNSRecursiveNameServer, dns.Code())
-	require.Equal(t, 2, len(dns.NameServers))
-	require.Equal(t, net.ParseIP("fe80::1"), dns.NameServers[0])
-	require.Equal(t, net.ParseIP("fe80::2"), dns.NameServers[1])
-	require.NotEqual(t, net.ParseIP("fe80::1"), dns.NameServers[1])
+	require.Equal(t, 2, len(dns))
+	require.Equal(t, net.ParseIP("fe80::1"), dns[0])
+	require.Equal(t, net.ParseIP("fe80::2"), dns[1])
+	require.NotEqual(t, net.ParseIP("fe80::1"), dns[1])
 }
 
 func TestWithDomainSearchList(t *testing.T) {
 	var d Message
-	WithDomainSearchList([]string{
-		"slackware.it",
-		"dhcp.slackware.it",
-	}...)(&d)
-	require.Equal(t, 1, len(d.Options))
-	osl := d.Options[0].(*OptDomainSearchList)
-	require.Equal(t, OptionDomainSearchList, osl.Code())
-	require.NotNil(t, osl.DomainSearchList)
-	labels := osl.DomainSearchList.Labels
+	WithDomainSearchList("slackware.it", "dhcp.slackware.it")(&d)
+	require.Equal(t, 1, len(d.Options.Options))
+	osl := d.Options.DomainSearchList()
+	require.NotNil(t, osl)
+	labels := osl.Labels
 	require.Equal(t, 2, len(labels))
 	require.Equal(t, "slackware.it", labels[0])
 	require.Equal(t, "dhcp.slackware.it", labels[1])
@@ -99,9 +86,51 @@ func TestWithDomainSearchList(t *testing.T) {
 func TestWithFQDN(t *testing.T) {
 	var d Message
 	WithFQDN(4, "cnos.localhost")(&d)
-	require.Equal(t, 1, len(d.Options))
-	ofqdn := d.Options[0].(*OptFQDN)
+	require.Equal(t, 1, len(d.Options.Options))
+	ofqdn := d.Options.FQDN()
 	require.Equal(t, OptionFQDN, ofqdn.Code())
 	require.Equal(t, uint8(4), ofqdn.Flags)
-	require.Equal(t, "cnos.localhost", ofqdn.DomainName)
+	require.Equal(t, "cnos.localhost", ofqdn.DomainName.Labels[0])
+}
+
+func TestWithDHCP4oDHCP6Server(t *testing.T) {
+	var d Message
+	WithDHCP4oDHCP6Server([]net.IP{
+		net.ParseIP("fe80::1"),
+		net.ParseIP("fe80::2"),
+	}...)(&d)
+	require.Equal(t, 1, len(d.Options.Options))
+	opt := d.Options.DHCP4oDHCP6Server()
+	require.Equal(t, OptionDHCP4oDHCP6Server, opt.Code())
+	require.Equal(t, 2, len(opt.DHCP4oDHCP6Servers))
+	require.Equal(t, net.ParseIP("fe80::1"), opt.DHCP4oDHCP6Servers[0])
+	require.Equal(t, net.ParseIP("fe80::2"), opt.DHCP4oDHCP6Servers[1])
+	require.NotEqual(t, net.ParseIP("fe80::1"), opt.DHCP4oDHCP6Servers[1])
+}
+
+func TestWithIAPD(t *testing.T) {
+	var d Message
+	_, pre, _ := net.ParseCIDR("2001:DB8:7689::/48")
+	prefix := &OptIAPrefix{
+		PreferredLifetime: 3600,
+		ValidLifetime:     5200,
+		Prefix:            pre,
+	}
+	WithIAPD([4]byte{1, 2, 3, 4}, prefix)(&d)
+	opt := d.Options.IAPD()
+	require.Equal(t, 1, len(opt))
+	require.Equal(t, OptionIAPD, opt[0].Code())
+}
+
+func TestWithClientLinkLayerAddress(t *testing.T) {
+	var d RelayMessage
+	mac, _ := net.ParseMAC("a4:83:e7:e3:df:88")
+	WithClientLinkLayerAddress(iana.HWTypeEthernet, mac)(&d)
+
+	opt := d.Options.GetOne(OptionClientLinkLayerAddr)
+	require.Equal(t, OptionClientLinkLayerAddr, opt.Code())
+
+	llt, lla := d.Options.ClientLinkLayerAddress()
+	require.Equal(t, iana.HWTypeEthernet, llt)
+	require.Equal(t, mac, lla)
 }

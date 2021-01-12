@@ -46,16 +46,16 @@ func TestOptIANAGetOneOption(t *testing.T) {
 		IPv6Addr: net.ParseIP("::1"),
 	}
 	opt := OptIANA{
-		Options: []Option{&OptElapsedTime{}, oaddr},
+		Options: IdentityOptions{[]Option{&OptStatusCode{}, oaddr}},
 	}
-	require.Equal(t, oaddr, opt.GetOneOption(OptionIAAddr))
+	require.Equal(t, oaddr, opt.Options.OneAddress())
 }
 
 func TestOptIANAAddOption(t *testing.T) {
 	opt := OptIANA{}
-	opt.AddOption(&OptElapsedTime{})
-	require.Equal(t, 1, len(opt.Options))
-	require.Equal(t, OptionElapsedTime, opt.Options[0].Code())
+	opt.Options.Add(OptElapsedTime(0))
+	require.Equal(t, 1, len(opt.Options.Options))
+	require.Equal(t, OptionElapsedTime, opt.Options.Options[0].Code())
 }
 
 func TestOptIANAGetOneOptionMissingOpt(t *testing.T) {
@@ -63,28 +63,34 @@ func TestOptIANAGetOneOptionMissingOpt(t *testing.T) {
 		IPv6Addr: net.ParseIP("::1"),
 	}
 	opt := OptIANA{
-		Options: []Option{&OptElapsedTime{}, oaddr},
+		Options: IdentityOptions{[]Option{&OptStatusCode{}, oaddr}},
 	}
-	require.Equal(t, nil, opt.GetOneOption(OptionDNSRecursiveNameServer))
+	require.Equal(t, nil, opt.Options.GetOne(OptionDNSRecursiveNameServer))
 }
 
 func TestOptIANADelOption(t *testing.T) {
-	optiana1 := OptIANA{}
-	optiana2 := OptIANA{}
 	optiaaddr := OptIAAddress{}
 	optsc := OptStatusCode{}
 
-	optiana1.Options = append(optiana1.Options, &optsc)
-	optiana1.Options = append(optiana1.Options, &optiaaddr)
-	optiana1.Options = append(optiana1.Options, &optiaaddr)
-	optiana1.DelOption(OptionIAAddr)
-	require.Equal(t, optiana1.Options, Options{&optsc})
+	iana1 := OptIANA{
+		Options: IdentityOptions{[]Option{
+			&optsc,
+			&optiaaddr,
+			&optiaaddr,
+		}},
+	}
+	iana1.Options.Del(OptionIAAddr)
+	require.Equal(t, iana1.Options.Options, Options{&optsc})
 
-	optiana2.Options = append(optiana2.Options, &optiaaddr)
-	optiana2.Options = append(optiana2.Options, &optsc)
-	optiana2.Options = append(optiana2.Options, &optiaaddr)
-	optiana2.DelOption(OptionIAAddr)
-	require.Equal(t, optiana2.Options, Options{&optsc})
+	iana2 := OptIANA{
+		Options: IdentityOptions{[]Option{
+			&optiaaddr,
+			&optsc,
+			&optiaaddr,
+		}},
+	}
+	iana2.Options.Del(OptionIAAddr)
+	require.Equal(t, iana2.Options.Options, Options{&optsc})
 }
 
 func TestOptIANAToBytes(t *testing.T) {
@@ -92,17 +98,15 @@ func TestOptIANAToBytes(t *testing.T) {
 		IaId: [4]byte{1, 2, 3, 4},
 		T1:   12345 * time.Second,
 		T2:   54321 * time.Second,
-		Options: []Option{
-			&OptElapsedTime{
-				ElapsedTime: 0xaabb,
-			},
-		},
+		Options: IdentityOptions{[]Option{
+			OptElapsedTime(10 * time.Millisecond),
+		}},
 	}
 	expected := []byte{
 		1, 2, 3, 4, // IA ID
 		0, 0, 0x30, 0x39, // T1 = 12345
 		0, 0, 0xd4, 0x31, // T2 = 54321
-		0, 8, 0, 2, 0xaa, 0xbb,
+		0, 8, 0, 2, 0x00, 0x01,
 	}
 	require.Equal(t, expected, opt.ToBytes())
 }
@@ -130,7 +134,7 @@ func TestOptIANAString(t *testing.T) {
 	)
 	require.Contains(
 		t, str,
-		"options=[",
+		"options={",
 		"String() should return a list of options",
 	)
 }
