@@ -114,7 +114,7 @@ func TestAddOption(t *testing.T) {
 	require.Empty(t, d.Options)
 	opt := OptionGeneric{OptionCode: 0, OptionData: []byte{}}
 	d.AddOption(&opt)
-	require.Equal(t, Options{&opt}, d.Options)
+	require.Equal(t, Options{&opt}, d.Options.Options)
 }
 
 func TestToBytes(t *testing.T) {
@@ -165,11 +165,9 @@ func TestNewAdvertiseFromSolicit(t *testing.T) {
 		MessageType:   MessageTypeSolicit,
 		TransactionID: TransactionID{0xa, 0xb, 0xc},
 	}
-	cid := OptClientId{}
-	s.AddOption(&cid)
-	duid := Duid{}
+	s.AddOption(OptClientID(Duid{}))
 
-	a, err := NewAdvertiseFromSolicit(&s, WithServerID(duid))
+	a, err := NewAdvertiseFromSolicit(&s, WithServerID(Duid{}))
 	require.NoError(t, err)
 	require.Equal(t, a.TransactionID, s.TransactionID)
 	require.Equal(t, a.Type(), MessageTypeAdvertise)
@@ -180,12 +178,9 @@ func TestNewReplyFromMessage(t *testing.T) {
 		TransactionID: TransactionID{0xa, 0xb, 0xc},
 		MessageType:   MessageTypeConfirm,
 	}
-	cid := OptClientId{}
-	msg.AddOption(&cid)
-	sid := OptServerId{}
-	duid := Duid{}
-	sid.Sid = duid
-	msg.AddOption(&sid)
+	var duid Duid
+	msg.AddOption(OptClientID(duid))
+	msg.AddOption(OptServerID(duid))
 
 	rep, err := NewReplyFromMessage(&msg, WithServerID(duid))
 	require.NoError(t, err)
@@ -242,42 +237,32 @@ func TestNewMessageTypeSolicit(t *testing.T) {
 
 	require.Equal(t, s.Type(), MessageTypeSolicit)
 	// Check CID
-	cidOption := s.GetOneOption(OptionClientID)
-	require.NotNil(t, cidOption)
-	cid, ok := cidOption.(*OptClientId)
-	require.True(t, ok)
-	require.Equal(t, cid.Cid, duid)
+	cduid := s.Options.ClientID()
+	require.NotNil(t, cduid)
+	require.Equal(t, cduid, &duid)
 
 	// Check ORO
-	oroOption := s.GetOneOption(OptionORO)
-	require.NotNil(t, oroOption)
-	oro, ok := oroOption.(*OptRequestedOption)
-	require.True(t, ok)
-	opts := oro.RequestedOptions()
-	require.Contains(t, opts, OptionDNSRecursiveNameServer)
-	require.Contains(t, opts, OptionDomainSearchList)
-	require.Equal(t, len(opts), 2)
+	oro := s.Options.RequestedOptions()
+	require.Contains(t, oro, OptionDNSRecursiveNameServer)
+	require.Contains(t, oro, OptionDomainSearchList)
+	require.Equal(t, len(oro), 2)
 
 	// Check IA_NA
 	iaid := [4]byte{hwAddr[2], hwAddr[3], hwAddr[4], hwAddr[5]}
-	iaNaOption := s.GetOneOption(OptionIANA)
-	require.NotNil(t, iaNaOption)
-	iaNa, ok := iaNaOption.(*OptIANA)
-	require.True(t, ok)
-	require.Equal(t, iaid, iaNa.IaId)
+	iana := s.Options.OneIANA()
+	require.NotNil(t, iana)
+	require.Equal(t, iaid, iana.IaId)
 }
 
 func TestIsUsingUEFIArchTypeTrue(t *testing.T) {
 	msg := Message{}
-	opt := OptClientArchType{ArchTypes: []iana.Arch{iana.EFI_BC}}
-	msg.AddOption(&opt)
+	msg.AddOption(OptClientArchType(iana.EFI_BC))
 	require.True(t, IsUsingUEFI(&msg))
 }
 
 func TestIsUsingUEFIArchTypeFalse(t *testing.T) {
 	msg := Message{}
-	opt := OptClientArchType{ArchTypes: []iana.Arch{iana.INTEL_X86PC}}
-	msg.AddOption(&opt)
+	msg.AddOption(OptClientArchType(iana.INTEL_X86PC))
 	require.False(t, IsUsingUEFI(&msg))
 }
 

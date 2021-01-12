@@ -113,8 +113,8 @@ func TestParseOption(t *testing.T) {
 		},
 		{
 			code:  OptionRelayAgentInformation,
-			value: []byte{1, 4, 129, 168, 0, 1},
-			want:  "    unknown (1): [129 168 0 1]\n",
+			value: []byte{1, 12, 99, 105, 114, 99, 117, 105, 116, 45, 105, 100, 45, 49},
+			want:  "\n    Agent Circuit ID Sub-option: circuit-id-1 ([99 105 114 99 117 105 116 45 105 100 45 49])\n",
 		},
 		{
 			code:  OptionClientSystemArchitectureType,
@@ -194,9 +194,25 @@ func TestOptionsMarshal(t *testing.T) {
 				5, 1, 10,
 			),
 		},
+		{
+			// Test 0-length options
+			opts: Options{
+				80: []byte{},
+			},
+			want: []byte{80, 0},
+		},
+		{
+			// Test special options, handled by the message marshalling code
+			// and ignored by the options marshalling code
+			opts: Options{
+				0:   []byte{}, // Padding
+				255: []byte{}, // End of options
+			},
+			want: nil, // not written out
+		},
 	} {
 		t.Run(fmt.Sprintf("Test %02d", i), func(t *testing.T) {
-			require.Equal(t, uio.ToBigEndian(tt.opts), tt.want)
+			require.Equal(t, tt.want, uio.ToBigEndian(tt.opts))
 		})
 	}
 }

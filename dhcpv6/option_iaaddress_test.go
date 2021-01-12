@@ -43,22 +43,30 @@ func TestOptIAAddressParseInvalidBrokenOptions(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestOptIAAddressToBytesDefault(t *testing.T) {
+	want := []byte{
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // IP
+		0, 0, 0, 0, // preferred lifetime
+		0, 0, 0, 0, // valid lifetime
+	}
+	opt := OptIAAddress{}
+	require.Equal(t, opt.ToBytes(), want)
+}
+
 func TestOptIAAddressToBytes(t *testing.T) {
 	ipBytes := []byte{0x24, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 	expected := append(ipBytes, []byte{
 		0xa, 0xb, 0xc, 0xd, // preferred lifetime
 		0xe, 0xf, 0x1, 0x2, // valid lifetime
-		0, 8, 0, 2, 0xaa, 0xbb, // options
+		0, 8, 0, 2, 0x00, 0x01, // options
 	}...)
 	opt := OptIAAddress{
 		IPv6Addr:          net.IP(ipBytes),
 		PreferredLifetime: 0x0a0b0c0d * time.Second,
 		ValidLifetime:     0x0e0f0102 * time.Second,
-		Options: []Option{
-			&OptElapsedTime{
-				ElapsedTime: 0xaabb,
-			},
-		},
+		Options: AddressOptions{[]Option{
+			OptElapsedTime(10 * time.Millisecond),
+		}},
 	}
 	require.Equal(t, expected, opt.ToBytes())
 }
@@ -76,17 +84,17 @@ func TestOptIAAddressString(t *testing.T) {
 	str := opt.String()
 	require.Contains(
 		t, str,
-		"ipv6addr=2401:203:405:607:809:a0b:c0d:e0f",
+		"IP=2401:203:405:607:809:a0b:c0d:e0f",
 		"String() should return the ipv6addr",
 	)
 	require.Contains(
 		t, str,
-		"preferredlifetime=1m10s",
+		"PreferredLifetime=1m10s",
 		"String() should return the preferredlifetime",
 	)
 	require.Contains(
 		t, str,
-		"validlifetime=50s",
+		"ValidLifetime=50s",
 		"String() should return the validlifetime",
 	)
 }

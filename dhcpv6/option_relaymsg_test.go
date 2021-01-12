@@ -3,12 +3,13 @@ package dhcpv6
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestRelayMsgParseOptRelayMsg(t *testing.T) {
-	opt, err := ParseOptRelayMsg([]byte{
+	opt, err := parseOptRelayMsg([]byte{
 		1,                // MessageTypeSolicit
 		0xaa, 0xbb, 0xcc, // transaction ID
 		0, 8, // option: elapsed time
@@ -62,7 +63,7 @@ func TestRelayMsgParseOptRelayMsgSingleEncapsulation(t *testing.T) {
 		0xaa, 0xbb, 0xcc, // transaction ID
 		0, 8, // option: elapsed time
 		0, 2, // option length
-		0x11, 0x22, // option value
+		0x00, 0x01, // option value
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,22 +77,14 @@ func TestRelayMsgParseOptRelayMsgSingleEncapsulation(t *testing.T) {
 	if mType := r.Type(); mType != MessageTypeRelayForward {
 		t.Fatalf("Invalid messge type for relay. Expected %v, got %v", MessageTypeRelayForward, mType)
 	}
-	if len(r.Options) != 1 {
-		t.Fatalf("Invalid number of options. Expected 1, got %v", len(r.Options))
+	if len(r.Options.Options) != 1 {
+		t.Fatalf("Invalid number of options. Expected 1, got %v", len(r.Options.Options))
 	}
-	if code := r.Options[0].Code(); code != OptionRelayMsg {
-		t.Fatalf("Invalid option code. Expected OptionRelayMsg (%v), got %v",
-			OptionRelayMsg, code,
-		)
+	ro := r.Options.RelayMessage()
+	if ro == nil {
+		t.Fatalf("No relay message")
 	}
-	opt := r.Options[0]
-	ro, ok := opt.(*OptRelayMsg)
-	if !ok {
-		t.Fatalf("Invalid option type. Expected OptRelayMsg, got %v",
-			reflect.TypeOf(ro),
-		)
-	}
-	innerDHCP, ok := ro.RelayMessage().(*Message)
+	innerDHCP, ok := ro.(*Message)
 	if !ok {
 		t.Fatalf("Invalid relay message type. Expected Message, got %v",
 			reflect.TypeOf(innerDHCP),
@@ -106,17 +99,11 @@ func TestRelayMsgParseOptRelayMsgSingleEncapsulation(t *testing.T) {
 	if tID := innerDHCP.TransactionID; tID != xid {
 		t.Fatalf("Invalid inner DHCP transaction ID. Expected 0xaabbcc, got %v", tID)
 	}
-	if len(innerDHCP.Options) != 1 {
-		t.Fatalf("Invalid inner DHCP options length. Expected 1, got %v", len(innerDHCP.Options))
+	if len(innerDHCP.Options.Options) != 1 {
+		t.Fatalf("Invalid inner DHCP options length. Expected 1, got %v", len(innerDHCP.Options.Options))
 	}
-	innerOpt := innerDHCP.Options[0]
-	eto, ok := innerOpt.(*OptElapsedTime)
-	if !ok {
-		t.Fatalf("Invalid inner option type. Expected OptElapsedTime, got %v",
-			reflect.TypeOf(innerOpt),
-		)
-	}
-	if eTime := eto.ElapsedTime; eTime != 0x1122 {
+	eTime := innerDHCP.Options.ElapsedTime()
+	if eTime != 10*time.Millisecond {
 		t.Fatalf("Invalid elapsed time. Expected 0x1122, got 0x%04x", eTime)
 	}
 }
@@ -161,7 +148,7 @@ func TestSample(t *testing.T) {
 }
 
 func TestRelayMsgParseOptRelayMsgTooShort(t *testing.T) {
-	_, err := ParseOptRelayMsg([]byte{
+	_, err := parseOptRelayMsg([]byte{
 		1,                // MessageTypeSolicit
 		0xaa, 0xbb, 0xcc, // transaction ID
 		0, 8, // option: elapsed time
@@ -171,7 +158,7 @@ func TestRelayMsgParseOptRelayMsgTooShort(t *testing.T) {
 }
 
 func TestRelayMsgString(t *testing.T) {
-	opt, err := ParseOptRelayMsg([]byte{
+	opt, err := parseOptRelayMsg([]byte{
 		1,                // MessageTypeSolicit
 		0xaa, 0xbb, 0xcc, // transaction ID
 		0, 8, // option: elapsed time
@@ -182,7 +169,7 @@ func TestRelayMsgString(t *testing.T) {
 	require.Contains(
 		t,
 		opt.String(),
-		"relaymsg=Message",
+		"RelayMsg: Message",
 		"String() should contain the relaymsg contents",
 	)
 }

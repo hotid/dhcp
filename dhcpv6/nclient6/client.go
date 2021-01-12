@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package nclient6 is a minimum-functionality client for DHCPv6.
 package nclient6
 
 import (
@@ -70,6 +71,9 @@ type Client struct {
 
 	// wg protects the receiveLoop.
 	wg sync.WaitGroup
+
+	// printDropped logs dropped packets to logger if true.
+	printDropped bool
 
 	pendingMu sync.Mutex
 	// pending stores the distribution channels for each pending
@@ -217,6 +221,12 @@ func (c *Client) receiveLoop() {
 			msg, err := dhcpv6.MessageFromBytes(b[:n])
 			if err != nil {
 				// Not a valid DHCP packet; keep listening.
+				if c.printDropped {
+					if len(b) > 12 {
+						b = b[:12]
+					}
+					c.logger.Printf("Invalid DHCPv6 message received (len %d bytes), first 12 bytes: %#x", n, b)
+				}
 				continue
 			}
 
@@ -231,6 +241,9 @@ func (c *Client) receiveLoop() {
 				// This send may block.
 				case p.ch <- msg:
 				}
+			} else if c.printDropped {
+				// The Stringer will print the transaction ID.
+				c.logger.Printf("No client waiting for msg with this XID: %s", msg)
 			}
 			c.pendingMu.Unlock()
 		}
@@ -246,6 +259,13 @@ type ClientOpt func(*Client)
 func WithTimeout(d time.Duration) ClientOpt {
 	return func(c *Client) {
 		c.timeout = d
+	}
+}
+
+// WithLogDroppedPackets logs a short message for dropped packets.
+func WithLogDroppedPackets() ClientOpt {
+	return func(c *Client) {
+		c.printDropped = true
 	}
 }
 
@@ -294,12 +314,33 @@ func WithDebugLogger() ClientOpt {
 type Matcher func(*dhcpv6.Message) bool
 
 // IsMessageType returns a matcher that checks for the message type.
-//
-// If t is MessageTypeNone, all packets are matched.
-func IsMessageType(t dhcpv6.MessageType) Matcher {
+func IsMessageType(t dhcpv6.MessageType, tt ...dhcpv6.MessageType) Matcher {
 	return func(p *dhcpv6.Message) bool {
-		return p.MessageType == t || t == dhcpv6.MessageTypeNone
+		if p.MessageType == t {
+			return true
+		}
+		for _, mt := range tt {
+			if p.MessageType == mt {
+				return true
+			}
+		}
+		return false
 	}
+}
+
+// RemoteAddr is the default DHCP server address this client sends messages to.
+func (c *Client) RemoteAddr() *net.UDPAddr {
+	// Make a copy so the caller cannot modify the address once the client
+	// is running.
+	cop := *c.serverAddr
+	return &cop
+}
+
+// InterfaceAddr returns the MAC address of the client's interface.
+func (c *Client) InterfaceAddr() net.HardwareAddr {
+	b := make(net.HardwareAddr, len(c.ifaceHWAddr))
+	copy(b, c.ifaceHWAddr)
+	return b
 }
 
 // RapidSolicit sends a solicitation message with the RapidCommit option and
@@ -309,11 +350,23 @@ func (c *Client) RapidSolicit(ctx context.Context, modifiers ...dhcpv6.Modifier)
 	if err != nil {
 		return nil, err
 	}
-	msg, err := c.SendAndRead(ctx, c.serverAddr, solicit, IsMessageType(dhcpv6.MessageTypeReply))
+	msg, err := c.SendAndRead(ctx, c.serverAddr, solicit, IsMessageType(dhcpv6.MessageTypeReply, dhcpv6.MessageTypeAdvertise))
 	if err != nil {
 		return nil, err
 	}
-	return msg, nil
+
+	switch msg.MessageType {
+	case dhcpv6.MessageTypeReply:
+		// We got RapidCommitted.
+		return msg, nil
+
+	case dhcpv6.MessageTypeAdvertise:
+		// We didn't get RapidCommitted. Request regular lease.
+		return c.Request(ctx, msg, modifiers...)
+
+	default:
+		return nil, fmt.Errorf("invalid message type: cannot happen")
+	}
 }
 
 // Solicit sends a solicitation message and returns the first valid
