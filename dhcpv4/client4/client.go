@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"reflect"
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
@@ -145,10 +144,10 @@ func toUDPAddr(addr net.Addr, defaultAddr *net.UDPAddr) (*net.UDPAddr, error) {
 	if addr == nil {
 		uaddr = defaultAddr
 	} else {
-		if addr, ok := addr.(*net.UDPAddr); ok {
-			uaddr = addr
+		if a, ok := addr.(*net.UDPAddr); ok {
+			uaddr = a
 		} else {
-			return nil, fmt.Errorf("could not convert to net.UDPAddr, got %v instead", reflect.TypeOf(addr))
+			return nil, fmt.Errorf("could not convert to net.UDPAddr, got %T instead", addr)
 		}
 	}
 	if uaddr.IP.To4() == nil {
@@ -314,7 +313,7 @@ func (c *Client) SendReceive(sendFd, recvFd int, packet *dhcpv4.DHCPv4, messageT
 			}
 			dstPort := int(binary.BigEndian.Uint16(udph[2:4]))
 			expectedDstPort := dhcpv4.ClientPort
-			if c.RemoteAddr != nil {
+			if c.LocalAddr != nil {
 				expectedDstPort = c.LocalAddr.(*net.UDPAddr).Port
 			}
 			if dstPort != expectedDstPort {
@@ -322,7 +321,7 @@ func (c *Client) SendReceive(sendFd, recvFd int, packet *dhcpv4.DHCPv4, messageT
 			}
 			// UDP checksum is not checked
 			pLen := int(binary.BigEndian.Uint16(udph[4:6]))
-			payload := buf[iph.Len+8 : iph.Len+8+pLen]
+			payload := buf[iph.Len+8 : iph.Len+pLen]
 
 			response, innerErr = dhcpv4.FromBytes(payload)
 			if innerErr != nil {

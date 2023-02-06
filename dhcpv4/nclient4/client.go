@@ -352,7 +352,7 @@ func WithLogger(newLogger Logger) ClientOpt {
 func WithUnicast(srcAddr *net.UDPAddr) ClientOpt {
 	return func(c *Client) (err error) {
 		if srcAddr == nil {
-			srcAddr = &net.UDPAddr{Port: ServerPort}
+			srcAddr = &net.UDPAddr{Port: ClientPort}
 		}
 		c.conn, err = net.ListenUDP("udp4", srcAddr)
 		if err != nil {
@@ -411,6 +411,25 @@ func IsMessageType(t dhcpv4.MessageType, tt ...dhcpv4.MessageType) Matcher {
 			}
 		}
 		return false
+	}
+}
+
+// IsCorrectServer returns a matcher that checks for the correct ServerAddress.
+func IsCorrectServer(s net.IP) Matcher {
+	return func(p *dhcpv4.DHCPv4) bool {
+		return p.ServerIdentifier().Equal(s)
+	}
+}
+
+// IsAll returns a matcher that checks for all given matchers to be true.
+func IsAll(ms ...Matcher) Matcher {
+	return func(p *dhcpv4.DHCPv4) bool {
+		for _, m := range ms {
+			if !m(p) {
+				return false
+			}
+		}
+		return true
 	}
 }
 
@@ -474,6 +493,7 @@ func (e *ErrNak) Error() string {
 }
 
 // RequestFromOffer sends a Request message and waits for an response.
+// It assumes the SELECTING state by default, see Section 4.3.2 in RFC 2131 for more details.
 func (c *Client) RequestFromOffer(ctx context.Context, offer *dhcpv4.DHCPv4, modifiers ...dhcpv4.Modifier) (*Lease, error) {
 	// TODO(chrisko): should this be unicast to the server?
 	request, err := dhcpv4.NewRequestFromOffer(offer, dhcpv4.PrependModifiers(modifiers,
@@ -482,7 +502,13 @@ func (c *Client) RequestFromOffer(ctx context.Context, offer *dhcpv4.DHCPv4, mod
 		return nil, fmt.Errorf("unable to create a request: %w", err)
 	}
 
-	response, err := c.SendAndRead(ctx, c.serverAddr, request, IsMessageType(dhcpv4.MessageTypeAck, dhcpv4.MessageTypeNak))
+	// Servers are supposed to only respond to Requests containing their server identifier,
+	// but sometimes non-compliant servers respond anyway.
+	// Clients are not required to validate this field, but servers are required to
+	// include the server identifier in their Offer per RFC 2131 Section 4.3.1 Table 3.
+	response, err := c.SendAndRead(ctx, c.serverAddr, request, IsAll(
+		IsCorrectServer(offer.ServerIdentifier()),
+		IsMessageType(dhcpv4.MessageTypeAck, dhcpv4.MessageTypeNak)))
 	if err != nil {
 		return nil, fmt.Errorf("got an error while processing the request: %w", err)
 	}

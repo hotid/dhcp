@@ -15,7 +15,8 @@ func TestMatchCircuitID(t *testing.T) {
 		fail    bool
 	}{
 		{name: "Bogus string", circuit: "bogus_interface", fail: true, want: nil},
-		{name: "juniperQFX pattern", circuit: "et-0/0/0:0.0", want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
+		{name: "juniperQFX pattern et", circuit: "et-0/0/0:0.0", want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
+		{name: "juniperQFX pattern xe", circuit: "xe-0/0/14:2", want: &CircuitID{Slot: "0", Module: "0", Port: "14", SubPort: "2"}},
 		{name: "juniperPTX pattern", circuit: "et-0/0/0.0", want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
 		{name: "Arista pattern", circuit: "Ethernet3/17/1", want: &CircuitID{Slot: "3", Module: "17", Port: "1"}},
 		{name: "Juniper QFX pattern", circuit: "et-1/0/61", want: &CircuitID{Slot: "1", Module: "0", Port: "61"}},
@@ -48,7 +49,8 @@ func TestFormatCircuitID(t *testing.T) {
 		want    string
 	}{
 		{name: "empty", circuit: &CircuitID{}, want: ",,,,"},
-		{name: "juniperQFX pattern", circuit: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}, want: "0,0,0,0,"},
+		{name: "juniperQFX pattern et", circuit: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}, want: "0,0,0,0,"},
+		{name: "juniperQFX pattern xe", circuit: &CircuitID{Slot: "0", Module: "0", Port: "14", SubPort: "2"}, want: "0,0,14,2,"},
 		{name: "juniperPTX pattern", circuit: &CircuitID{Slot: "0", Module: "0", Port: "0"}, want: "0,0,0,,"},
 		{name: "Arista pattern", circuit: &CircuitID{Slot: "3", Module: "17", Port: "1"}, want: "3,17,1,,"},
 		{name: "Juniper QFX pattern", circuit: &CircuitID{Slot: "1", Module: "0", Port: "61"}, want: "1,0,61,,"},
@@ -75,9 +77,8 @@ func TestParseCircuitID(t *testing.T) {
 		fail    bool
 	}{
 		{name: "Bogus test", circuit: []byte("bogusInterface"), fail: true, want: nil},
-		{name: "juniperQFX pattern", circuit: []byte("et-0/0/0:0.0"), want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
-		{name: "Bogus string", circuit: []byte("bogus_interface"), fail: true, want: nil},
-		{name: "juniperQFX pattern", circuit: []byte("et-0/0/0:0.0"), want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
+		{name: "juniperQFX pattern et", circuit: []byte("et-0/0/0:0.0"), want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
+		{name: "juniperQFX pattern xe", circuit: []byte("xe-0/0/14:2"), want: &CircuitID{Slot: "0", Module: "0", Port: "14", SubPort: "2"}},
 		{name: "juniperPTX pattern", circuit: []byte("et-0/0/0.0"), want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
 		{name: "Arista pattern", circuit: []byte("Ethernet3/17/1"), want: &CircuitID{Slot: "3", Module: "17", Port: "1"}},
 		{name: "Juniper QFX pattern", circuit: []byte("et-1/0/61"), want: &CircuitID{Slot: "1", Module: "0", Port: "61"}},
@@ -88,6 +89,8 @@ func TestParseCircuitID(t *testing.T) {
 		{name: "Juniper Bundle Pattern", circuit: []byte("ae52.0"), want: &CircuitID{Port: "52", SubPort: "0"}},
 		{name: "Arista Vlan pattern 1 with circuitid type and length", circuit: []byte("\x00\x0fEthernet14:2001"), want: &CircuitID{Port: "14", Vlan: "2001"}},
 		{name: "juniperEX pattern", circuit: []byte("ge-0/0/0.0:RANDOMCHAR"), want: &CircuitID{Slot: "0", Module: "0", Port: "0", SubPort: "0"}},
+		{name: "Ciena pattern 1", circuit: []byte("tt-tt-tttt-6-7.OSC-1-2"), want: &CircuitID{Slot: "1", Port: "2"}},
+		{name: "Ciena pattern 2", circuit: []byte("tt-tt-tttt-6-7.OSC-1-2-3"), want: &CircuitID{Slot: "2", Port: "3"}},
 	}
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {

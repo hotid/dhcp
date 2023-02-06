@@ -10,7 +10,7 @@ import (
 	"github.com/insomniacslk/dhcp/iana"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"github.com/u-root/u-root/pkg/rand"
+	"github.com/u-root/uio/rand"
 )
 
 func randomReadMock(value []byte, n int, err error) func([]byte) (int, error) {
@@ -252,32 +252,6 @@ func TestNewMessageTypeSolicit(t *testing.T) {
 	iana := s.Options.OneIANA()
 	require.NotNil(t, iana)
 	require.Equal(t, iaid, iana.IaId)
-}
-
-func TestIsUsingUEFIArchTypeTrue(t *testing.T) {
-	msg := Message{}
-	msg.AddOption(OptClientArchType(iana.EFI_BC))
-	require.True(t, IsUsingUEFI(&msg))
-}
-
-func TestIsUsingUEFIArchTypeFalse(t *testing.T) {
-	msg := Message{}
-	msg.AddOption(OptClientArchType(iana.INTEL_X86PC))
-	require.False(t, IsUsingUEFI(&msg))
-}
-
-func TestIsUsingUEFIUserClassTrue(t *testing.T) {
-	msg := Message{}
-	opt := OptUserClass{UserClasses: [][]byte{[]byte("ipxeUEFI")}}
-	msg.AddOption(&opt)
-	require.True(t, IsUsingUEFI(&msg))
-}
-
-func TestIsUsingUEFIUserClassFalse(t *testing.T) {
-	msg := Message{}
-	opt := OptUserClass{UserClasses: [][]byte{[]byte("ipxeLegacy")}}
-	msg.AddOption(&opt)
-	require.False(t, IsUsingUEFI(&msg))
 }
 
 func TestGetTransactionIDMessage(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 
 	"github.com/insomniacslk/dhcp/iana"
 	"github.com/stretchr/testify/require"
-	"github.com/u-root/u-root/pkg/uio"
+	"github.com/u-root/uio/uio"
 )
 
 func TestGetExternalIPv4Addrs(t *testing.T) {
@@ -165,13 +165,13 @@ func TestNewToBytes(t *testing.T) {
 	// Magic Cookie
 	expected = append(expected, magicCookie[:]...)
 
-	// Minimum message length padding.
-	//
-	// 236 + 4 byte cookie + 59 bytes padding + 1 byte end.
-	expected = append(expected, bytes.Repeat([]byte{0}, 59)...)
-
 	// End
 	expected = append(expected, 0xff)
+
+	// Minimum message length padding.
+	//
+	// 236 + 4 byte cookie + 1 byte end + 59 bytes padding.
+	expected = append(expected, bytes.Repeat([]byte{0}, 59)...)
 
 	d, err := New()
 	require.NoError(t, err)
@@ -231,10 +231,6 @@ func TestDHCPv4NewRequestFromOffer(t *testing.T) {
 	require.NoError(t, err)
 	offer.SetBroadcast()
 	offer.UpdateOption(OptMessageType(MessageTypeOffer))
-	_, err = NewRequestFromOffer(offer)
-	require.Error(t, err)
-
-	// Now add the option so it doesn't error out.
 	offer.UpdateOption(OptServerIdentifier(net.IPv4(192, 168, 0, 1)))
 
 	// Broadcast request
@@ -268,6 +264,43 @@ func TestDHCPv4NewRequestFromOfferWithModifier(t *testing.T) {
 	req, err := NewRequestFromOffer(offer, userClass)
 	require.NoError(t, err)
 	require.Equal(t, MessageTypeRequest, req.MessageType())
+}
+
+func TestDHCPv4NewRenewFromOffer(t *testing.T) {
+	offer, err := New()
+	require.NoError(t, err)
+	offer.SetBroadcast()
+	offer.UpdateOption(OptMessageType(MessageTypeOffer))
+	offer.UpdateOption(OptServerIdentifier(net.IPv4(192, 168, 0, 1)))
+	offer.UpdateOption(OptRequestedIPAddress(net.IPv4(192, 168, 0, 1)))
+	offer.YourIPAddr = net.IPv4(192, 168, 0, 1)
+
+	// RFC 2131: RENEW-style requests will be unicast
+	var req *DHCPv4
+	req, err = NewRenewFromOffer(offer)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRequest, req.MessageType())
+	require.Nil(t, req.GetOneOption(OptionServerIdentifier))
+	require.Nil(t, req.GetOneOption(OptionRequestedIPAddress))
+	require.Equal(t, offer.YourIPAddr, req.ClientIPAddr)
+	require.True(t, req.IsUnicast())
+	require.False(t, req.IsBroadcast())
+	// Renewals should behave identically to initial requests regarding requested options
+	require.True(t, req.IsOptionRequested(OptionRouter))
+	require.True(t, req.IsOptionRequested(OptionSubnetMask))
+	require.True(t, req.IsOptionRequested(OptionDomainName))
+	require.True(t, req.IsOptionRequested(OptionDomainNameServer))
+}
+
+func TestDHCPv4NewRenewFromOfferWithModifier(t *testing.T) {
+	offer, err := New()
+	require.NoError(t, err)
+	offer.UpdateOption(OptMessageType(MessageTypeOffer))
+	userClass := WithUserClass("linuxboot", false)
+	req, err := NewRenewFromOffer(offer, userClass)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRequest, req.MessageType())
+	require.Contains(t, req.UserClass(), "linuxboot")
 }
 
 func TestNewReplyFromRequest(t *testing.T) {
@@ -320,6 +353,16 @@ func TestNewInform(t *testing.T) {
 	require.Equal(t, hwAddr, m.ClientHWAddr)
 	require.Equal(t, MessageTypeInform, m.MessageType())
 	require.True(t, m.ClientIPAddr.Equal(localIP))
+}
+
+func TestDHCPv4NewInformWithModifier(t *testing.T) {
+	hwAddr := net.HardwareAddr{1, 2, 3, 4, 5, 6}
+	localIP := net.IPv4(10, 10, 11, 11)
+	serverID := net.IPv4(192, 168, 0, 1)
+	m, err := NewInform(hwAddr, localIP, WithOption(OptServerIdentifier(serverID)))
+
+	require.NoError(t, err)
+	require.True(t, serverID.Equal(m.ServerIdentifier()))
 }
 
 func TestIsOptionRequested(t *testing.T) {

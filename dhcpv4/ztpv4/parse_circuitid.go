@@ -17,8 +17,8 @@ type CircuitID struct {
 }
 
 var circuitRegexs = []*regexp.Regexp{
-	// Juniper QFX et-0/0/0:0.0
-	regexp.MustCompile("^et-(?P<slot>[0-9]+)/(?P<mod>[0-9]+)/(?P<port>[0-9]+):(?P<subport>[0-9]+).*$"),
+	// Juniper QFX et-0/0/0:0.0 and xe-0/0/0:0.0
+	regexp.MustCompile("^(et|xe)-(?P<slot>[0-9]+)/(?P<mod>[0-9]+)/(?P<port>[0-9]+):(?P<subport>[0-9]+).*$"),
 	// Juniper PTX et-0/0/0.0
 	regexp.MustCompile("^et-(?P<slot>[0-9]+)/(?P<mod>[0-9]+)/(?P<port>[0-9]+).(?P<subport>[0-9]+)$"),
 	// Juniper EX ge-0/0/0.0
@@ -37,6 +37,8 @@ var circuitRegexs = []*regexp.Regexp{
 	regexp.MustCompile("^Ethernet(?P<slot>[0-9]+)/(?P<port>[0-9]+)$"),
 	// Juniper bundle interface ae52.0
 	regexp.MustCompile("^ae(?P<port>[0-9]+).(?P<subport>[0-9])$"),
+	// Ciena interface format
+	regexp.MustCompile(`\.OSC(-[0-9]+)?-(?P<slot>[0-9]+)-(?P<port>[0-9]+)$`),
 }
 
 // ParseCircuitID will parse dhcpv4 packet and return CircuitID info
