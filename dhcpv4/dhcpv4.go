@@ -248,18 +248,22 @@ func NewRequestFromOffer(offer *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) 
 	)...)
 }
 
-// NewRenewFromOffer builds a DHCPv4 RENEW-style request from an offer. RENEW requests have minor
-// changes to their options compared to SELECT requests as specified by RFC 2131, section 4.3.2.
-func NewRenewFromOffer(offer *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) {
-	return NewRequestFromOffer(offer, PrependModifiers(modifiers,
-		// The server identifier option must not be filled in
-		WithoutOption(OptionServerIdentifier),
-		// The requested IP address must not be filled in
-		WithoutOption(OptionRequestedIPAddress),
+// NewRenewFromAck builds a DHCPv4 RENEW-style request from the ACK of a lease. RENEW requests have
+// minor changes to their options compared to SELECT requests as specified by RFC 2131, section 4.3.2.
+func NewRenewFromAck(ack *DHCPv4, modifiers ...Modifier) (*DHCPv4, error) {
+	return New(PrependModifiers(modifiers,
+		WithReply(ack),
+		WithMessageType(MessageTypeRequest),
 		// The client IP must be filled in with the IP offered to the client
-		WithClientIP(offer.YourIPAddr),
+		WithClientIP(ack.YourIPAddr),
 		// The renewal request must use unicast
 		WithBroadcast(false),
+		WithRequestedOptions(
+			OptionSubnetMask,
+			OptionRouter,
+			OptionDomainName,
+			OptionDomainNameServer,
+		),
 	)...)
 }
 
@@ -479,7 +483,7 @@ func (d *DHCPv4) IsOptionRequested(requested OptionCode) bool {
 	}
 
 	for _, o := range rq {
-		if o == requested {
+		if o.Code() == requested.Code() {
 			return true
 		}
 	}
@@ -726,11 +730,36 @@ func (d *DHCPv4) IPAddressRebindingTime(def time.Duration) time.Duration {
 	return time.Duration(dur)
 }
 
+// IPv6OnlyPreferred returns the V6ONLY_WAIT duration, and a boolean
+// indicating whether this option was present.
+//
+// The IPv6-Only Preferred option is described by RFC 8925, Section 3.1.
+func (d *DHCPv4) IPv6OnlyPreferred() (time.Duration, bool) {
+	v := d.Options.Get(OptionIPv6OnlyPreferred)
+	if v == nil {
+		return 0, false
+	}
+	var dur Duration
+	if err := dur.FromBytes(v); err != nil {
+		return 0, false
+	}
+	return time.Duration(dur), true
+}
+
 // MaxMessageSize returns the DHCP Maximum Message Size if present.
 //
 // The Maximum DHCP Message Size option is described by RFC 2132, Section 9.10.
 func (d *DHCPv4) MaxMessageSize() (uint16, error) {
 	return GetUint16(OptionMaximumDHCPMessageSize, d.Options)
+}
+
+// AutoConfigure returns the value of the AutoConfigure option, and a
+// boolean indicating if it was present.
+//
+// The AutoConfigure option is described by RFC 2563, Section 2.
+func (d *DHCPv4) AutoConfigure() (AutoConfiguration, bool) {
+	v, err := GetByte(OptionAutoConfigure, d.Options)
+	return AutoConfiguration(v), err == nil
 }
 
 // MessageType returns the DHCPv4 Message Type option.
